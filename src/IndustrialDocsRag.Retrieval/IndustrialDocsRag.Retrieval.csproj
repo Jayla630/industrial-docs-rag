@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\IndustrialDocsRag.Core\IndustrialDocsRag.Core.csproj" />
+  </ItemGroup>
+
+  <!-- VectorMath 是 internal，测试项目需要看得见它 -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="IndustrialDocsRag.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Numerics.Tensors" Version="10.0.10" />
+  </ItemGroup>
+
+</Project>

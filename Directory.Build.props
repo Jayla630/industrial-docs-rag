@@ -1,0 +1,21 @@
+<Project>
+
+  <!--
+    全解决方案统一的构建配置。
+    Week4 的 WPF 项目需要 net10.0-windows，在它自己的 csproj 里覆盖 TargetFramework 即可
+    （csproj 里的属性赋值发生在本文件之后，会覆盖这里的值）。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- 可空性警告一律当错误：这个项目大量传递 chunk / 向量 / 检索结果，
+         一个漏判的 null 在运行期才炸，编译期挡掉最划算。 -->
+    <WarningsAsErrors>Nullable</WarningsAsErrors>
+
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+</Project>

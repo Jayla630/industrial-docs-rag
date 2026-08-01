@@ -1,0 +1,23 @@
+# 设计文档仅存本地，用作上下文参考；远程仓库只放可运行的源码
+docs/
+
+# ---- 构建产物 ----
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.suo
+TestResults/
+
+# ---- 手册原件与索引 ----
+# data/ 不能整目录忽略：chunks.jsonl 是 Week1 唯一的可复现输入，必须进 git。
+# 手册 PDF 与它的 Markdown 衍生物不入库（体积 + 版权），
+# README 里说明如何用 tools/pdf_to_md.py 重新生成。
+data/*
+!data/.gitkeep
+!data/chunks.jsonl
+data/index.*.json
+
+# ---- Python 一次性脚本的运行残留 ----
+tools/__pycache__/
+tools/.venv/

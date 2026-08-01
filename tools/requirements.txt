@@ -1,0 +1,8 @@
+# PDF -> Markdown 预处理的唯一依赖。
+# 这是一次性脚本的环境，不属于主技术栈（主技术栈是 .NET）。
+#
+#   py -m venv tools/.venv
+#   tools/.venv/Scripts/python.exe -m pip install -r tools/requirements.txt
+#   tools/.venv/Scripts/python.exe tools/pdf_to_md.py data/sv660n-manual.pdf data/sv660n-manual.md
+
+pymupdf==1.28.0

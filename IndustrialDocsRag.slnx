@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/IndustrialDocsRag.App/IndustrialDocsRag.App.csproj" />
+    <Project Path="src/IndustrialDocsRag.Core/IndustrialDocsRag.Core.csproj" />
+    <Project Path="src/IndustrialDocsRag.Ingestion/IndustrialDocsRag.Ingestion.csproj" />
+    <Project Path="src/IndustrialDocsRag.Retrieval/IndustrialDocsRag.Retrieval.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/IndustrialDocsRag.Tests/IndustrialDocsRag.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,35 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>idr</AssemblyName>
+    <RootNamespace>IndustrialDocsRag.App</RootNamespace>
+    <UserSecretsId>3bb2d76f-5c18-466f-b771-b1203f2c2bd9</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IndustrialDocsRag.Core\IndustrialDocsRag.Core.csproj" />
+    <ProjectReference Include="..\IndustrialDocsRag.Ingestion\IndustrialDocsRag.Ingestion.csproj" />
+    <ProjectReference Include="..\IndustrialDocsRag.Retrieval\IndustrialDocsRag.Retrieval.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- SK 的提示词模板。做成嵌入资源而不是散文件，避免运行时路径问题，
+       也让 Week4 的 WPF 引用本项目时不必额外拷贝文件。 -->
+  <ItemGroup>
+    <EmbeddedResource Include="Prompts\answer.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10" />
+    <PackageReference Include="Microsoft.SemanticKernel" Version="1.78.0" />
+  </ItemGroup>
+
+</Project>

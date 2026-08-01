@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    红线：本项目零 NuGet 依赖，只放领域模型与抽象接口。
+
+    一旦引入 Semantic Kernel / Qdrant / HttpClient 相关包，
+    "检索层可替换" 这个核心主张在代码上就站不住了，面试时也讲不圆。
+    见 docs/plan-week1.md §4。
+
+    构建配置全部来自根目录的 Directory.Build.props。
+  -->
+
+</Project>
