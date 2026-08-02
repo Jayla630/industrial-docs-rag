@@ -12,12 +12,18 @@ public static class AskCommand
     public static async Task<int> RunAsync(
         IServiceProvider services,
         string indexPath,
+        string sparseModelPath,
         string question,
         string? dumpTopKPath,
         CancellationToken ct)
     {
         var index = services.GetRequiredService<InMemoryChunkIndex>();
-        await index.LoadAsync(indexPath, ct);
+        if (services.GetRequiredService<RagOptions>().Backend == "memory")
+        {
+            await index.LoadAsync(indexPath, ct);
+        }
+
+        await SparseModelLoader.LoadIfNeededAsync(services, sparseModelPath, ct);
 
         var answerer = services.GetRequiredService<IAnswerService>();
         var retriever = services.GetRequiredService<IRetriever>();

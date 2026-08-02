@@ -8,7 +8,11 @@ using IndustrialDocsRag.Core.Retrieval;
 using Microsoft.SemanticKernel;
 using IndustrialDocsRag.Retrieval.Diagnostics;
 using IndustrialDocsRag.Retrieval.Embeddings;
+using IndustrialDocsRag.Retrieval.Fusion;
 using IndustrialDocsRag.Retrieval.InMemory;
+using IndustrialDocsRag.Retrieval.Qdrant;
+using IndustrialDocsRag.Retrieval.Sparse;
+using Qdrant.Client;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -44,7 +48,18 @@ public static class CompositionRoot
         // 规范化：Week1 恒等实现，入库侧和查询侧共用同一个实例，保证两侧对称。
         services.AddSingleton<ITermNormalizer>(PassthroughTermNormalizer.Instance);
 
-        services.AddSingleton<ISparseEncoder>(NullSparseEncoder.Instance);
+        // Week2：稀疏侧换成自建 BM25。入库时由流水线 Fit，查询时由命令从
+        // data/bm25.*.json 装入 —— 两侧必须是同一份统计量，否则检索静默劣化。
+        services.AddSingleton<Bm25SparseEncoder>();
+        services.AddSingleton<ISparseEncoder>(sp => sp.GetRequiredService<Bm25SparseEncoder>());
+
+        services.AddSingleton<IScoreFusion>(_ => options.FusionKind switch
+        {
+            "rrf" => new RrfFusion(),
+            "weighted" => new WeightedFusion(options.FusionAlpha),
+            var other => throw new InvalidOperationException(
+                $"未知的融合方式：{other}（可选 rrf / weighted）"),
+        });
 
         services.AddSingleton<IEmbeddingService>(_ => options.Embedding.Provider switch
         {
@@ -62,30 +77,92 @@ public static class CompositionRoot
         });
 
         services.AddSingleton<InMemoryChunkIndex>();
-        services.AddSingleton<IChunkIndex>(sp => sp.GetRequiredService<InMemoryChunkIndex>());
 
-        // ↓ 这一处 switch 就是 ShuffleRetriever 对照实验的全部改动量
+        // Qdrant 相关的都是惰性构造：backend=memory 时根本不会去连它，
+        // 没装 Docker 的人照样能用 15 条 fixture 跑通全链路。
+        services.AddSingleton(_ => new QdrantOptions
+        {
+            Host = options.Qdrant.Host,
+            Port = options.Qdrant.Port,
+            Collection = options.Qdrant.Collection,
+        });
+
+        services.AddSingleton(sp =>
+        {
+            var q = sp.GetRequiredService<QdrantOptions>();
+            return new QdrantClient(q.Host, q.Port);
+        });
+
+        services.AddSingleton(sp => new QdrantChunkIndex(
+            sp.GetRequiredService<QdrantClient>(),
+            sp.GetRequiredService<QdrantOptions>(),
+            options.Embedding.DenseDimension));
+
+        services.AddSingleton<IChunkIndex>(sp => options.Backend switch
+        {
+            "memory" => sp.GetRequiredService<InMemoryChunkIndex>(),
+            "qdrant" => sp.GetRequiredService<QdrantChunkIndex>(),
+            var other => throw new InvalidOperationException(
+                $"未知的后端：{other}（可选 memory / qdrant）"),
+        });
+
+        // ↓ 这两处 switch 就是「检索层可替换」的全部改动量：
+        //   换检索器一行，换存储后端一行，其余代码零改动。
         services.AddSingleton<IRetriever>(sp => retrieverKind switch
         {
-            "dense" => new InMemoryVectorRetriever(
-                sp.GetRequiredService<InMemoryChunkIndex>(),
-                sp.GetRequiredService<IEmbeddingService>()),
+            "dense" => Dense(sp),
+            "sparse" => Sparse(sp),
+
+            // 融合在客户端做，所以这一行对内存索引和 Qdrant 是同一份代码
+            "hybrid" => new HybridRetriever(Dense(sp), Sparse(sp), sp.GetRequiredService<IScoreFusion>()),
 
             "shuffle" => new ShuffleRetriever(sp.GetRequiredService<InMemoryChunkIndex>(), shuffleSeed),
 
             var other => throw new InvalidOperationException(
-                $"未知的检索器：{other}（可选 dense / shuffle）"),
+                $"未知的检索器：{other}（可选 dense / sparse / hybrid / shuffle）"),
         });
+
+        IRetriever Dense(IServiceProvider sp) => options.Backend == "qdrant"
+            ? new QdrantDenseRetriever(
+                sp.GetRequiredService<QdrantClient>(),
+                sp.GetRequiredService<QdrantOptions>(),
+                sp.GetRequiredService<IEmbeddingService>())
+            : new InMemoryVectorRetriever(
+                sp.GetRequiredService<InMemoryChunkIndex>(),
+                sp.GetRequiredService<IEmbeddingService>());
+
+        IRetriever Sparse(IServiceProvider sp) => options.Backend == "qdrant"
+            ? new QdrantSparseRetriever(
+                sp.GetRequiredService<QdrantClient>(),
+                sp.GetRequiredService<QdrantOptions>(),
+                sp.GetRequiredService<ISparseEncoder>())
+            : new InMemorySparseRetriever(
+                sp.GetRequiredService<InMemoryChunkIndex>(),
+                sp.GetRequiredService<ISparseEncoder>());
 
         // Kernel 和问答服务都是惰性构造的：只有 ask 命令会去解析它们，
         // 所以 ingest / retrieve 在没有配置生成模型 Key 的情况下照样能跑。
         services.AddSingleton(_ => KernelFactory.Create(options));
 
-        services.AddSingleton<IAnswerService>(sp => new FixedPipelineAnswerService(
-            sp.GetRequiredService<Kernel>(),
-            sp.GetRequiredService<IRetriever>(),
-            sp.GetRequiredService<ITermNormalizer>(),
-            options));
+        services.AddSingleton<IAnswerService>(sp => options.AnswererKind switch
+        {
+            "fixed" => new FixedPipelineAnswerService(
+                sp.GetRequiredService<Kernel>(),
+                sp.GetRequiredService<IRetriever>(),
+                sp.GetRequiredService<ITermNormalizer>(),
+                options),
+
+            // 注意传的是工厂而不是 Kernel 实例：每次 AskAsync 要新建一个，
+            // 否则插件里暂存的召回集会跨轮污染（见 ManualSearchPlugin 的注释）。
+            "agent" => new SkAnswerService(
+                options,
+                sp.GetRequiredService<IRetriever>(),
+                sp.GetRequiredService<ITermNormalizer>(),
+                () => KernelFactory.Create(options)),
+
+            var other => throw new InvalidOperationException(
+                $"未知的问答实现：{other}（可选 fixed / agent）"),
+        });
 
         return services.BuildServiceProvider();
     }

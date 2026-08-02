@@ -14,8 +14,9 @@ namespace IndustrialDocsRag.Retrieval.Embeddings;
 /// 所以 <see cref="ProducesSparse"/> 恒为 false，混合检索的稀疏侧必须自建。
 /// </para>
 /// <para>
-/// 刻意不做重试、退避、限流（见 docs/plan-week1.md §5.1 第 11 项）。Week1 只有十几个块，
-/// 撞上 429 手动重跑即可；过早加韧性代码会掩盖端点本身的问题。
+/// Week1 刻意不做重试（§5.1 第 11 项），前提是只有十几个块。Week2 语料涨到 1667 块、
+/// 分批 32 条即 53 次请求，免费额度的 QPS 限制会真的撞上，所以补了最小退避重试：
+/// 只重试 429 与 5xx，指数退避，最多三次。不引 Polly —— 二十行的事。
 /// </para>
 /// </summary>
 public sealed class RemoteDenseEmbeddingService : IEmbeddingService, IDisposable
@@ -74,13 +75,15 @@ public sealed class RemoteDenseEmbeddingService : IEmbeddingService, IDisposable
         return all;
     }
 
+    private const int MaxAttempts = 4;
+
     private async Task<IReadOnlyList<EmbeddingResult>> EmbedBatchAsync(
         IReadOnlyList<string> texts,
         CancellationToken ct)
     {
         var request = new EmbeddingRequest(_model, texts);
 
-        using var response = await _http.PostAsJsonAsync("embeddings", request, JsonDefaults.Options, ct);
+        using var response = await SendWithBackoffAsync(request, ct);
 
         if (!response.IsSuccessStatusCode)
         {
@@ -113,6 +116,33 @@ public sealed class RemoteDenseEmbeddingService : IEmbeddingService, IDisposable
         }
 
         return ordered.Select(d => new EmbeddingResult(d.Embedding, null)).ToList();
+    }
+
+    /// <summary>
+    /// 只对 429 与 5xx 退避重试 —— 这两类是「过一会儿再来」，其余（401 鉴权、400 参数错）
+    /// 重试多少次都一样，重试只会拖长排查时间。
+    /// </summary>
+    private async Task<HttpResponseMessage> SendWithBackoffAsync(
+        EmbeddingRequest request,
+        CancellationToken ct)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            var response = await _http.PostAsJsonAsync("embeddings", request, JsonDefaults.Options, ct);
+
+            var retryable = response.StatusCode is System.Net.HttpStatusCode.TooManyRequests
+                            || (int)response.StatusCode >= 500;
+
+            if (!retryable || attempt >= MaxAttempts)
+            {
+                return response;
+            }
+
+            response.Dispose();
+
+            var delay = TimeSpan.FromMilliseconds(500 * Math.Pow(2, attempt - 1));
+            await Task.Delay(delay, ct);
+        }
     }
 
     private static string Truncate(string s, int max)

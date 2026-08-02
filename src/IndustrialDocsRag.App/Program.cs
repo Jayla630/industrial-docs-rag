@@ -52,6 +52,27 @@ internal static class Program
             options.Embedding.Provider = embedder;
         }
 
+        if (Flag(flags, "answerer") is { } answerer)
+        {
+            options.AnswererKind = answerer;
+        }
+
+        if (Flag(flags, "backend") is { } backend)
+        {
+            options.Backend = backend;
+        }
+
+        // 融合方式是 Week3 的一条实验维度，命令行可直接切换
+        if (Flag(flags, "fusion") is { } fusion)
+        {
+            options.FusionKind = fusion;
+        }
+
+        if (Flag(flags, "alpha") is { } alpha && double.TryParse(alpha, out var parsedAlpha))
+        {
+            options.FusionAlpha = parsedAlpha;
+        }
+
         switch (command)
         {
             case "ingest":
@@ -59,9 +80,13 @@ internal static class Program
                 var chunksPath = RepoPaths.Resolve(Flag(flags, "input") ?? options.ChunksPath);
                 var indexPath = RepoPaths.Resolve(Flag(flags, "index") ?? options.IndexPath);
 
+                var sparseModelPath = SparseModelPath(flags, options);
+                var emitChunks = Flag(flags, "emit-chunks") is { } e ? RepoPaths.Resolve(e) : null;
+
                 // ingest 不需要检索器，但组合根要求给一个 —— 用默认值即可
                 await using var services = CompositionRoot.Build(options, options.RetrieverKind);
-                return await IngestCommand.RunAsync(services, chunksPath, indexPath, ct);
+                return await IngestCommand.RunAsync(
+                    services, chunksPath, indexPath, sparseModelPath, Flag(flags, "doc-id"), emitChunks, ct);
             }
 
             case "retrieve":
@@ -78,7 +103,7 @@ internal static class Program
 
                 await using var services = CompositionRoot.Build(options, retriever, ShuffleSeed(flags));
                 return await RetrieveCommand.RunAsync(
-                    services, indexPath, positional[0], topK, DumpPath(flags), ct);
+                    services, indexPath, SparseModelPath(flags, options), positional[0], topK, DumpPath(flags), ct);
             }
 
             case "ask":
@@ -99,7 +124,7 @@ internal static class Program
 
                 await using var services = CompositionRoot.Build(options, retriever, ShuffleSeed(flags));
                 return await AskCommand.RunAsync(
-                    services, indexPath, positional[0], DumpPath(flags), ct);
+                    services, indexPath, SparseModelPath(flags, options), positional[0], DumpPath(flags), ct);
             }
 
             default:
@@ -119,6 +144,9 @@ internal static class Program
     /// </summary>
     private static int ShuffleSeed(IReadOnlyDictionary<string, string> flags)
         => Flag(flags, "seed") is { } s && int.TryParse(s, out var seed) ? seed : 20260801;
+
+    private static string SparseModelPath(IReadOnlyDictionary<string, string> flags, RagOptions options)
+        => RepoPaths.Resolve(Flag(flags, "sparse-model") ?? options.SparseModelPath);
 
     private static string? DumpPath(IReadOnlyDictionary<string, string> flags)
         => Flag(flags, "dump-topk") is { } p ? RepoPaths.Resolve(p) : null;
@@ -173,13 +201,16 @@ internal static class Program
         industrial-docs-rag — 工业设备手册检索增强问答
 
         用法：
-          idr ingest   [--input <chunks.jsonl>] [--index <index.json>] [--embedder remote|fake]
-              读入手工切好的块，嵌入后写索引并落盘。
+          idr ingest   [--input <chunks.jsonl|manual.md>] [--index <index.json>] [--embedder remote|fake]
+                       [--doc-id <id>] [--emit-chunks <文件>]
+              读入块，嵌入后写索引并落盘。
+              --input 给 .md 走自动切分（表格行上下文化 + 页码锚点），给 .jsonl 读手工切好的块。
+              --emit-chunks 把切分结果落成 jsonl 供人眼抽样审阅。
 
-          idr retrieve <查询串> [--topk N] [--retriever dense|shuffle] [--seed N]
+          idr retrieve <查询串> [--topk N] [--retriever dense|sparse|hybrid|shuffle] [--seed N]
               只跑检索、不接生成模型，直接打印召回结果与分数。
 
-          idr ask      <问题> [--topk N] [--retriever dense|shuffle] [--seed N]
+          idr ask      <问题> [--topk N] [--retriever dense|sparse|hybrid|shuffle] [--seed N]
               完整问答：检索 → 填 prompt → 流式生成 → 引用表。
               答案里的 [chunk-id] 会与召回集求交集，模型编造的编号会被丢弃并单独报出。
 
@@ -187,6 +218,22 @@ internal static class Program
         --embedder remote  调用 BGE-M3 远程端点（默认，需要 API Key）
         --embedder fake    离线哈希词袋，不调外部服务；换了之后必须重新 ingest。
         --dump-topk <文件> 把本次召回追加写成 jsonl，供 Week3 的 pooling 标注。
+
+        --answerer fixed|agent   fixed 是固定流水线（检索一次再作答）；
+                                 agent 把检索包成 search_manual 交给 LLM 自主调用，
+                                 一轮问答里可能出现多次检索。
+
+        --backend memory|qdrant  存储后端。qdrant 需先 `docker compose up -d`。
+                                 两者的检索器种类完全一样，换后端只是一行开关。
+
+        检索器：
+        dense    BGE-M3 稠密向量余弦。强在语义（0x6041 ↔ 手册里的 6041），弱在精确术语。
+        sparse   自建 BM25。强在精确术语（E201.2 / 0x22010201 这类稀有词 IDF 极高），弱在语义。
+        hybrid   两路都跑再融合。--fusion rrf（默认）或 weighted，后者用 --alpha 调稠密侧权重。
+        shuffle  对照组，随机返回块，用来证明检索真的在起作用。
+
+        BM25 的词表与 IDF 落在 --sparse-model（默认 data/bm25.week2.json）。
+        这个文件同时是索引清单：它记录产出稠密向量的嵌入服务名与维度，不匹配直接硬失败。
 
         --retriever shuffle 是对照组：随机返回块，用来证明检索真的在起作用。
         注意它有统计功效问题：随机抽 K 块时，正确那块被误抽中的概率是 K/N，

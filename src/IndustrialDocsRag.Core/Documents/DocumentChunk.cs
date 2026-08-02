@@ -34,6 +34,16 @@ public sealed record DocumentChunk
     /// </summary>
     public int CharOffset { get; init; }
 
+    /// <summary>
+    /// 本块在源 Markdown 中占据的字符数，覆盖区间是 <c>[CharOffset, CharOffset + SourceLength)</c>。
+    /// <para>
+    /// 不能用 <c>Text.Length</c> 代替：<see cref="ChunkKind.TableRow"/> 的 <see cref="Text"/> 是
+    /// 拼装出来的（补了章节路径和表头字段名），比源文本长得多，用它算区间会一路盖到后面几行，
+    /// Week3 判命中就会误判。而表格行占了本项目语料的绝大多数。
+    /// </para>
+    /// </summary>
+    public int SourceLength { get; init; }
+
     /// <summary>见 <see cref="ChunkKind"/>。</summary>
     public ChunkKind Kind { get; init; } = ChunkKind.Text;
 

@@ -2,6 +2,7 @@ using IndustrialDocsRag.App.Configuration;
 using IndustrialDocsRag.Core.Normalization;
 using IndustrialDocsRag.Core.Retrieval;
 using IndustrialDocsRag.Retrieval.InMemory;
+using IndustrialDocsRag.Retrieval.Sparse;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace IndustrialDocsRag.App.Commands;
@@ -18,13 +19,21 @@ public static class RetrieveCommand
     public static async Task<int> RunAsync(
         IServiceProvider services,
         string indexPath,
+        string sparseModelPath,
         string question,
         int topK,
         string? dumpTopKPath,
         CancellationToken ct)
     {
-        var index = services.GetRequiredService<InMemoryChunkIndex>();
-        await index.LoadAsync(indexPath, ct);
+        var options = services.GetRequiredService<RagOptions>();
+        var chunkIndex = services.GetRequiredService<IChunkIndex>();
+
+        if (options.Backend == "memory")
+        {
+            await services.GetRequiredService<InMemoryChunkIndex>().LoadAsync(indexPath, ct);
+        }
+
+        await SparseModelLoader.LoadIfNeededAsync(services, sparseModelPath, ct);
 
         var retriever = services.GetRequiredService<IRetriever>();
         var normalizer = services.GetRequiredService<ITermNormalizer>();
@@ -32,7 +41,8 @@ public static class RetrieveCommand
         // 与入库侧调用同一个 normalizer 实例，保证两侧对称
         var normalized = normalizer.Normalize(question);
 
-        Console.WriteLine($"索引   : {RepoPaths.ToDisplay(indexPath)}  ({await index.CountAsync(ct)} 块, 由 {index.EmbeddingServiceName} 产出)");
+        var where = options.Backend == "memory" ? RepoPaths.ToDisplay(indexPath) : $"qdrant/{options.Qdrant.Collection}";
+        Console.WriteLine($"索引   : {where}  ({await chunkIndex.CountAsync(ct)} 块)");
         Console.WriteLine($"检索器 : {retriever.Name}");
         Console.WriteLine($"查询   : {normalized}");
         Console.WriteLine();
