@@ -29,7 +29,8 @@ public sealed record DocumentChunk
     /// <summary>
     /// 本块在源 Markdown 中的起始字符偏移。
     /// 这不是装饰字段：Week3 的评测集把 ground truth 绑在「页码 + 关键字符串」而非 chunk id 上，
-    /// 判定命中的方式是看召回块的 <c>[CharOffset, CharOffset + Text.Length)</c> 区间是否覆盖锚点。
+    /// 判定命中的方式是看召回块的 <c>[CharOffset, CharOffset + SourceLength)</c> 区间是否覆盖锚点
+    /// —— 用 <c>Text.Length</c> 是错的，理由见 <see cref="SourceLength"/>。
     /// 有了它，后续调整切分规则不会让整套评测集失效。
     /// </summary>
     public int CharOffset { get; init; }

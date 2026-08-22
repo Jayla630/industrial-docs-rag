@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\IndustrialDocsRag.Core\IndustrialDocsRag.Core.csproj" />
+    <ProjectReference Include="..\IndustrialDocsRag.Eval\IndustrialDocsRag.Eval.csproj" />
     <ProjectReference Include="..\IndustrialDocsRag.Ingestion\IndustrialDocsRag.Ingestion.csproj" />
     <ProjectReference Include="..\IndustrialDocsRag.Retrieval\IndustrialDocsRag.Retrieval.csproj" />
   </ItemGroup>

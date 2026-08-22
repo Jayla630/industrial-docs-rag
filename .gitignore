@@ -1,5 +1,7 @@
-# 设计文档仅存本地，用作上下文参考；远程仓库只放可运行的源码
+# 设计方案、施工方案、Claude Code 本地配置一律只存本地；远程仓库只放可运行的源码与 README
 docs/
+.claude/
+CLAUDE.md
 
 # ---- 构建产物 ----
 [Bb]in/
@@ -16,6 +18,15 @@ TestResults/
 data/*
 !data/.gitkeep
 !data/chunks.jsonl
+
+# 评测集进 git：作品集的核心资产，且只含短 needle，不含手册成段正文。
+# data/* 连目录一起忽略，所以必须先放行目录再放行文件。
+!data/eval/
+!data/eval/questions.jsonl
+# 标注决策记录：说明哪些块被判为「同样正确」及理由，是评测可复核的一部分。
+!data/eval/pooling-notes.tsv
+# 候选池是检索转储的中间产物（手册衍生物），随时可重新生成，不入库。
+data/eval/pool*.jsonl
 data/index.*.json
 
 # ---- Python 一次性脚本的运行残留 ----

@@ -73,6 +73,13 @@ internal static class Program
             options.FusionAlpha = parsedAlpha;
         }
 
+        // 规范化只作用于稀疏侧，是 Week3 的第二条实验维度。
+        // 改了它必须换一套索引与 sparse-model —— 模型文件的守卫会拦下不匹配的组合。
+        if (Flag(flags, "normalizer") is { } normalizer)
+        {
+            options.NormalizerKind = normalizer;
+        }
+
         switch (command)
         {
             case "ingest":
@@ -125,6 +132,18 @@ internal static class Program
                 await using var services = CompositionRoot.Build(options, retriever, ShuffleSeed(flags));
                 return await AskCommand.RunAsync(
                     services, indexPath, SparseModelPath(flags, options), positional[0], DumpPath(flags), ct);
+            }
+
+            case "eval":
+            {
+                var questionsPath = RepoPaths.Resolve(Flag(flags, "set") ?? "data/eval/questions.jsonl");
+                var corpusPath = RepoPaths.Resolve(Flag(flags, "corpus") ?? "data/sv660n-manual.md");
+                var outPath = RepoPaths.Resolve(Flag(flags, "out") ?? "docs/eval-report.md");
+                var evalTopK = Flag(flags, "topk") is { } et && int.TryParse(et, out var ek) ? ek : options.TopK;
+
+                return await EvalCommand.RunAsync(
+                    options, questionsPath, corpusPath, Flag(flags, "configs"),
+                    flags.ContainsKey("validate"), outPath, evalTopK, ct);
             }
 
             default:
@@ -214,6 +233,13 @@ internal static class Program
               完整问答：检索 → 填 prompt → 流式生成 → 引用表。
               答案里的 [chunk-id] 会与召回集求交集，模型编造的编号会被丢弃并单独报出。
 
+          idr eval     [--set data/eval/questions.jsonl] [--corpus data/sv660n-manual.md]
+                       [--configs all|<名字,…>] [--validate] [--out docs/eval-report.md]
+              跑评测矩阵，产出分层召回率、逐题配对、融合对比三张表。
+              --validate 只解析锚点、报唯一性冲突，不跑检索。
+              需要完整语料（15 块 fixture 撑不起 25 题）。
+              主表跑内存后端；--backend qdrant --configs dense,sparse,hybrid-rrf 出一致性复核表。
+
         公共开关：
         --embedder remote  调用 BGE-M3 远程端点（默认，需要 API Key）
         --embedder fake    离线哈希词袋，不调外部服务；换了之后必须重新 ingest。
@@ -225,6 +251,11 @@ internal static class Program
 
         --backend memory|qdrant  存储后端。qdrant 需先 `docker compose up -d`。
                                  两者的检索器种类完全一样，换后端只是一行开关。
+
+        --normalizer passthrough|hex
+                                 稀疏侧的术语规范化。hex 把 0x6041 / 603Fh 归一成 6041 / 603f。
+                                 只影响稀疏侧，稠密侧一个字不改。换了它要配套换 --index 与
+                                 --sparse-model，模型文件的守卫会拦下不匹配的组合。
 
         检索器：
         dense    BGE-M3 稠密向量余弦。强在语义（0x6041 ↔ 手册里的 6041），弱在精确术语。

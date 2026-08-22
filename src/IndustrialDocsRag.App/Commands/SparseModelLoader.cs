@@ -25,13 +25,13 @@ public static class SparseModelLoader
         }
 
         var loaded = await SparseModelStore.LoadAsync(sparseModelPath, ct);
+        var encoder = services.GetRequiredService<Bm25SparseEncoder>();
 
         // 这个文件同时是索引清单：Week1 长在 InMemoryChunkIndex 上的同源校验，
-        // 换到 Qdrant 后就没有载体了，由它接管。
-        loaded.EnsureCompatibleWith(services.GetRequiredService<IEmbeddingService>());
+        // 换到 Qdrant 后就没有载体了，由它接管。Week3 起多守一条规范化器一致。
+        loaded.EnsureCompatibleWith(
+            services.GetRequiredService<IEmbeddingService>(), encoder.NormalizerName);
 
-        services.GetRequiredService<Bm25SparseEncoder>().Load(
-            loaded.Encoder.Model
-            ?? throw new InvalidDataException($"BM25 模型文件没有统计量：{sparseModelPath}"));
+        encoder.Load(loaded.Model);
     }
 }

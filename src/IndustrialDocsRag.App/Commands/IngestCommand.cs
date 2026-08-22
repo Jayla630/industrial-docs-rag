@@ -67,7 +67,8 @@ public static class IngestCommand
         // BM25 的词表与 IDF 必须落盘：不落盘，重启后查询侧与入库侧的权重就对不上，
         // 检索结果静默劣化 —— 不报错，只是变差。这个文件同时充当索引清单。
         await SparseModelStore.SaveAsync(
-            sparseModelPath, sparseEncoder, embedder.Name, embedder.DenseDimension, ct);
+            sparseModelPath, sparseEncoder, embedder.Name, embedder.DenseDimension,
+            sparseEncoder.NormalizerName, ct);
 
         var backend = services.GetRequiredService<RagOptions>().Backend;
         var where = backend == "memory" ? RepoPaths.ToDisplay(indexPath) : $"qdrant/{services.GetRequiredService<RagOptions>().Qdrant.Collection}";

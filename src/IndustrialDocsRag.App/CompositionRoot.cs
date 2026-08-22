@@ -10,6 +10,7 @@ using IndustrialDocsRag.Retrieval.Diagnostics;
 using IndustrialDocsRag.Retrieval.Embeddings;
 using IndustrialDocsRag.Retrieval.Fusion;
 using IndustrialDocsRag.Retrieval.InMemory;
+using IndustrialDocsRag.Retrieval.Normalization;
 using IndustrialDocsRag.Retrieval.Qdrant;
 using IndustrialDocsRag.Retrieval.Sparse;
 using Qdrant.Client;
@@ -45,12 +46,25 @@ public static class CompositionRoot
 
         services.AddSingleton(options);
 
-        // 规范化：Week1 恒等实现，入库侧和查询侧共用同一个实例，保证两侧对称。
+        // ★ DI 里的 ITermNormalizer 恒为 passthrough，不受 --normalizer 影响。
+        //
+        //   RetrieveCommand / FixedPipelineAnswerService / SkAnswerService / IngestionPipeline
+        //   各有一处 normalizer.Normalize(text)，而改写后的文本会同时喂给稠密侧和稀疏侧。
+        //   把 hex 规范化器注册到这里，稠密侧的查询也会被改写 —— 规范化 A/B 就不是单变量实验了，
+        //   而且失效方式是「规范化组看起来有收益」。
+        //
+        //   CompositionRootNormalizerTests 锁死了这个不变量。
         services.AddSingleton<ITermNormalizer>(PassthroughTermNormalizer.Instance);
 
-        // Week2：稀疏侧换成自建 BM25。入库时由流水线 Fit，查询时由命令从
-        // data/bm25.*.json 装入 —— 两侧必须是同一份统计量，否则检索静默劣化。
-        services.AddSingleton<Bm25SparseEncoder>();
+        // 稀疏侧的规范化器单独选，只经由 Bm25SparseEncoder 的构造参数进入系统。
+        // 注入到编码器里，入库侧与查询侧的对称性就由构造保证，不靠调用点各自记得调。
+        services.AddSingleton(_ => new Bm25SparseEncoder(options.NormalizerKind switch
+        {
+            "passthrough" => PassthroughTermNormalizer.Instance,
+            "hex" => new HexTermNormalizer(),
+            var other => throw new InvalidOperationException(
+                $"未知的规范化器：{other}（可选 passthrough / hex）"),
+        }));
         services.AddSingleton<ISparseEncoder>(sp => sp.GetRequiredService<Bm25SparseEncoder>());
 
         services.AddSingleton<IScoreFusion>(_ => options.FusionKind switch

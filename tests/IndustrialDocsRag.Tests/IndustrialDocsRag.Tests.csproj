@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\IndustrialDocsRag.Core\IndustrialDocsRag.Core.csproj" />
+    <ProjectReference Include="..\..\src\IndustrialDocsRag.Eval\IndustrialDocsRag.Eval.csproj" />
     <ProjectReference Include="..\..\src\IndustrialDocsRag.Retrieval\IndustrialDocsRag.Retrieval.csproj" />
     <ProjectReference Include="..\..\src\IndustrialDocsRag.App\IndustrialDocsRag.App.csproj" />
   </ItemGroup>

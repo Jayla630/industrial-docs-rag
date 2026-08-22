@@ -1,5 +1,6 @@
 using IndustrialDocsRag.Core.Documents;
 using IndustrialDocsRag.Core.Embeddings;
+using IndustrialDocsRag.Core.Normalization;
 using IndustrialDocsRag.Core.Retrieval;
 using IndustrialDocsRag.Retrieval.InMemory;
 using IndustrialDocsRag.Retrieval.Sparse;
@@ -18,7 +19,7 @@ public class InMemorySparseRetrieverTests
 
     private static (InMemorySparseRetriever Retriever, InMemoryChunkIndex Index) Build()
     {
-        var encoder = new Bm25SparseEncoder();
+        var encoder = new Bm25SparseEncoder(PassthroughTermNormalizer.Instance);
         encoder.Fit(Texts);
 
         var index = new InMemoryChunkIndex();

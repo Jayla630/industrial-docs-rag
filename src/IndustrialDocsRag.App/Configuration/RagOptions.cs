@@ -8,7 +8,7 @@ public sealed class RagOptions
     public string ChunksPath { get; set; } = "data/chunks.jsonl";
 
     /// <summary>内存索引的落盘位置。</summary>
-    public string IndexPath { get; set; } = "data/index.week1.json";
+    public string IndexPath { get; set; } = "data/index.week3.json";
 
     public int TopK { get; set; } = 5;
 
@@ -19,7 +19,7 @@ public sealed class RagOptions
     /// BM25 模型的落盘位置。这个文件同时是索引清单 ——
     /// 它记录产出稠密向量的嵌入服务名与维度，换到 Qdrant 后由它接管同源校验。
     /// </summary>
-    public string SparseModelPath { get; set; } = "data/bm25.week2.json";
+    public string SparseModelPath { get; set; } = "data/bm25.week3.json";
 
     /// <summary>
     /// <c>memory</c> 或 <c>qdrant</c>。命令行 <c>--backend</c> 可覆盖。
@@ -40,6 +40,16 @@ public sealed class RagOptions
     /// 这个开关同时是 Week3 的一条实验维度。
     /// </summary>
     public string AnswererKind { get; set; } = "fixed";
+
+    /// <summary>
+    /// 稀疏侧的术语规范化器：<c>passthrough</c> 或 <c>hex</c>。命令行 <c>--normalizer</c> 可覆盖。
+    /// <para>
+    /// <b>它只作用于稀疏侧。</b> DI 里的 <c>ITermNormalizer</c> 恒为 passthrough，
+    /// 否则命令层那句 <c>normalizer.Normalize(question)</c> 会把稠密侧的查询文本也改写，
+    /// 规范化 A/B 就不是单变量实验了。见 CompositionRootNormalizerTests。
+    /// </para>
+    /// </summary>
+    public string NormalizerKind { get; set; } = "passthrough";
 
     public EmbeddingOptions Embedding { get; set; } = new();
 

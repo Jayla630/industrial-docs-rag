@@ -1,0 +1,25 @@
+{"qid": "q01", "stratum": "FaultCode", "query": "E201.2 的辅助码是多少", "anchors": [{"page": 129, "needle": "0x22010201"}]}
+{"qid": "q02", "stratum": "FaultCode", "query": "E108.1 能不能复位", "anchors": [{"page": 128, "needle": "0x11080108"}]}
+{"qid": "q03", "stratum": "FaultCode", "query": "E210.0 属于哪一类故障", "anchors": [{"page": 129, "needle": "0x02100210"}]}
+{"qid": "q04", "stratum": "FaultCode", "query": "多圈编码器的圈数记满了会报什么故障，能不能复位", "anchors": [{"page": 129, "needle": "0x07350735"}, {"page": 150, "needle": "E735.0：编码器多圈计数溢出"}]}
+{"qid": "q05", "stratum": "FaultCode", "query": "两个 DI 端子设成了同一个功能会报什么错", "anchors": [{"page": 128, "needle": "0x11220122"}, {"page": 136, "needle": "DI 功能分配时，同一功能重复分配给多个DI 端子"}]}
+{"qid": "q06", "stratum": "Param", "query": "H06-08 的出厂值是多少", "anchors": [{"page": 184, "needle": "H06-08"}]}
+{"qid": "q07", "stratum": "Param", "query": "H02-10 的设定范围", "anchors": [{"page": 179, "needle": "H02-10"}]}
+{"qid": "q08", "stratum": "Param", "query": "H08-01 的单位是什么", "anchors": [{"page": 185, "needle": "H08-01"}]}
+{"qid": "q09", "stratum": "Param", "query": "第四路 DI 输入的电平逻辑默认是哪种", "anchors": [{"page": 181, "needle": "H03-09"}]}
+{"qid": "q10", "stratum": "Param", "query": "怎么给驱动器设访问密码，出厂默认是多少", "anchors": [{"page": 180, "needle": "H02-30"}]}
+{"qid": "q11", "stratum": "ObjectDictionary", "query": "6041 的数据类型和访问权限", "anchors": [{"page": 204, "needle": "状态字"}]}
+{"qid": "q12", "stratum": "ObjectDictionary", "query": "6040 的数据范围是多少", "anchors": [{"page": 204, "needle": "控制字"}]}
+{"qid": "q13", "stratum": "ObjectDictionary", "query": "6060 能不能做 PDO 映射", "anchors": [{"page": 204, "needle": "伺服模式选择"}]}
+{"qid": "q14", "stratum": "ObjectDictionary", "query": "位置偏差过大的阈值在哪个对象里设，出厂值多少", "anchors": [{"page": 204, "needle": "位置偏差过大阀值"}, {"page": 152, "needle": "故障值6065h 过小"}, {"page": 153, "needle": "故障值6065h 过小"}]}
+{"qid": "q15", "stratum": "ObjectDictionary", "query": "判断电机停转的转速门限默认是多少", "anchors": [{"page": 205, "needle": "零速信号阈值"}]}
+{"qid": "q16", "stratum": "Notation", "query": "0x603F 是什么", "anchors": [{"page": 204, "needle": "错误码"}]}
+{"qid": "q17", "stratum": "Notation", "query": "0x605A 怎么设置", "anchors": [{"page": 204, "needle": "快速停机方式选择"}, {"page": 123, "needle": "Quick Stop option code"}]}
+{"qid": "q18", "stratum": "Notation", "query": "606Dh 的单位是什么", "anchors": [{"page": 205, "needle": "速度到达阈值"}]}
+{"qid": "q19", "stratum": "Notation", "query": "0x6067 的出厂值", "anchors": [{"page": 204, "needle": "位置到达阈值"}]}
+{"qid": "q20", "stratum": "Notation", "query": "6061h 是只读还是可读写", "anchors": [{"page": 204, "needle": "运行模式显示"}]}
+{"qid": "q21", "stratum": "Prose", "query": "外接制动电阻应该接在哪两个端子上", "anchors": [{"page": 55, "needle": "之间连接外接制动电阻"}, {"page": 47, "needle": "P、C 外接制动电阻连接端子"}, {"page": 49, "needle": "需要外接泄放电阻时，将其接于P、C 之间"}, {"page": 50, "needle": "SIZE E 默认使用内置电阻"}, {"page": 106, "needle": "外接制动电阻的两端分别与"}, {"page": 12, "needle": "需要外接泄放电阻时，将其接于P、C 之间"}, {"page": 13, "needle": "将泄放电阻接于P、C 之间"}, {"page": 15, "needle": "将泄放电阻接于P、"}, {"page": 16, "needle": "将泄放电阻接于P、C 之间"}, {"page": 51, "needle": "使用外接制动电阻时请将P、D 之间短接线拆除"}]}
+{"qid": "q22", "stratum": "Prose", "query": "电源线接错到电机输出端会怎么样", "anchors": [{"page": 57, "needle": "不能将输入电源线连到输出端U"}]}
+{"qid": "q23", "stratum": "Prose", "query": "有腐蚀性气体的车间能装伺服驱动器吗", "anchors": [{"page": 26, "needle": "请勿在有硫化氢"}, {"page": 30, "needle": "请勿在有硫化氢"}]}
+{"qid": "q24", "stratum": "Prose", "query": "接地线要用多粗的，有没有推荐的线材", "anchors": [{"page": 88, "needle": "用于接地的外箱连接电线请尽可"}, {"page": 87, "needle": "接地配线尽可能使用粗线"}]}
+{"qid": "q25", "stratum": "Prose", "query": "用单相 220V 供电需要降容吗", "anchors": [{"page": 25, "needle": "使用单相输入时请降额到"}, {"page": 21, "needle": "使用单相输入时请降额到"}]}

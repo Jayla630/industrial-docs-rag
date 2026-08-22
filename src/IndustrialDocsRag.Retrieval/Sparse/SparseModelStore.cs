@@ -1,26 +1,34 @@
 using System.Text.Json;
 using IndustrialDocsRag.Core.Embeddings;
+using IndustrialDocsRag.Core.Normalization;
 using IndustrialDocsRag.Core.Serialization;
 
 namespace IndustrialDocsRag.Retrieval.Sparse;
 
-/// <summary>加载结果：训练好的编码器，加上产出这批索引的嵌入服务标识。</summary>
+/// <summary>加载结果：训练好的统计量，加上产出这批索引的嵌入服务与规范化器标识。</summary>
 public sealed record LoadedSparseModel(
-    Bm25SparseEncoder Encoder,
+    Bm25Model Model,
     string TokenizerName,
+    string NormalizerName,
     string EmbeddingServiceName,
     int DenseDimension)
 {
     /// <summary>
-    /// 确认索引里的稠密向量与当前查询用的嵌入服务同源。
-    /// <para>
-    /// Week1 这个守卫长在 <c>InMemoryChunkIndex</c> 上；换到 Qdrant 之后那个载体没了，
-    /// 由本文件接管。防的是同一件事：用 Fake 灌了库、换真实端点后忘了重新 ingest，
-    /// 此时余弦照样有分数、Top-K 照样有结果、答案照样像模像样，但检索是纯噪声。
-    /// 2300 块规模下这种失效比 15 块时更难察觉。
-    /// </para>
+    /// 确认索引与当前查询侧的配置同源。守的是两类都<b>不报错、只是变差</b>的失效：
+    /// <list type="number">
+    /// <item>用 Fake 灌了库、换真实端点后忘了重新 ingest —— 余弦照样有分数，但检索是纯噪声</item>
+    /// <item>用规范化训练的词表配不带规范化的查询侧 —— 词面对不上，召回静默劣化</item>
+    /// </list>
+    /// Week1 这个守卫长在 <c>InMemoryChunkIndex</c> 上；换到 Qdrant 之后那个载体没了，由本文件接管。
     /// </summary>
-    public void EnsureCompatibleWith(IEmbeddingService embedder)
+    public void EnsureCompatibleWith(IEmbeddingService embedder, ITermNormalizer normalizer)
+        => EnsureCompatibleWith(embedder, normalizer.Name);
+
+    /// <summary>
+    /// 只收规范化器名字的重载。调用方（<c>SparseModelLoader</c>）手上有的正是
+    /// <c>Bm25SparseEncoder.NormalizerName</c>，不必为了校验再造一个规范化器实例。
+    /// </summary>
+    public void EnsureCompatibleWith(IEmbeddingService embedder, string normalizerName)
     {
         if (!string.Equals(EmbeddingServiceName, embedder.Name, StringComparison.Ordinal))
         {
@@ -34,21 +42,32 @@ public sealed record LoadedSparseModel(
             throw new InvalidOperationException(
                 $"索引向量维度 {DenseDimension}，当前嵌入服务维度 {embedder.DenseDimension}。请重新执行 `idr ingest`。");
         }
+
+        if (!string.Equals(NormalizerName, normalizerName, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"词表由规范化器 `{NormalizerName}` 产出，当前查询侧是 `{normalizerName}`。" +
+                "两侧词面对不上，召回会静默劣化。请用匹配的 --normalizer，或重新执行 `idr ingest`。");
+        }
     }
 }
 
 /// <summary>
-/// BM25 模型的落盘与加载。这个文件同时是<b>索引清单</b> —— 见 <see cref="LoadedSparseModel.EnsureCompatibleWith"/>。
+/// BM25 模型的落盘与加载。这个文件同时是<b>索引清单</b> —— 见 <see cref="LoadedSparseModel.EnsureCompatibleWith(IEmbeddingService, string)"/>。
 /// </summary>
 public static class SparseModelStore
 {
-    private const int CurrentFormatVersion = 1;
+    // v1 没有 normalizerName 字段。版本号在 Week3 从 1 升到 2 之后，
+    // v1 文件一律在下面的版本校验处硬失败，绝不当成 passthrough 默默放行 ——
+    // 那样等于没加规范化器守卫。
+    private const int CurrentFormatVersion = 2;
 
     public static async Task SaveAsync(
         string path,
         Bm25SparseEncoder encoder,
         string embeddingServiceName,
         int denseDimension,
+        string normalizerName,
         CancellationToken ct = default)
     {
         var model = encoder.Model
@@ -63,6 +82,7 @@ public static class SparseModelStore
         var payload = new SparseModelFile(
             CurrentFormatVersion,
             IndustrialTokenizer.Name,
+            normalizerName,
             embeddingServiceName,
             denseDimension,
             DateTimeOffset.Now,
@@ -98,8 +118,9 @@ public static class SparseModelStore
         }
 
         return new LoadedSparseModel(
-            new Bm25SparseEncoder(payload.Model),
+            payload.Model,
             payload.TokenizerName,
+            payload.NormalizerName,
             payload.EmbeddingServiceName,
             payload.DenseDimension);
     }
@@ -107,6 +128,7 @@ public static class SparseModelStore
     private sealed record SparseModelFile(
         int Version,
         string TokenizerName,
+        string NormalizerName,
         string EmbeddingServiceName,
         int DenseDimension,
         DateTimeOffset CreatedAt,

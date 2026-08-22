@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    只依赖 Core。与 docs/plan-week1.md §1 原写的 `eval → Core, Retrieval, Ingestion` 有偏离：
+    锚点解析、命中判定、指标计算只碰 DocumentChunk 和 RetrievedChunk，两者都在 Core。
+    检索器的接线留在 App 的 EvalCommand。
+
+    保持零 DI、零控制台是刻意的 —— 一旦它能 new 出一个检索器，评测器自己就再也测不动了。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\IndustrialDocsRag.Core\IndustrialDocsRag.Core.csproj" />
+  </ItemGroup>
+
+</Project>

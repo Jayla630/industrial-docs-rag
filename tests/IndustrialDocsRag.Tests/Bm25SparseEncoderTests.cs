@@ -1,4 +1,6 @@
 using IndustrialDocsRag.Core.Embeddings;
+using IndustrialDocsRag.Core.Normalization;
+using IndustrialDocsRag.Retrieval.Normalization;
 using IndustrialDocsRag.Retrieval.Sparse;
 
 namespace IndustrialDocsRag.Tests;
@@ -19,7 +21,7 @@ public class Bm25SparseEncoderTests
 
     private static Bm25SparseEncoder Fitted()
     {
-        var encoder = new Bm25SparseEncoder();
+        var encoder = new Bm25SparseEncoder(PassthroughTermNormalizer.Instance);
         encoder.Fit(Corpus);
         return encoder;
     }
@@ -35,7 +37,7 @@ public class Bm25SparseEncoderTests
     [Fact]
     public void EncodeDocument_未训练时抛异常而不是返回垃圾权重()
     {
-        var encoder = new Bm25SparseEncoder();
+        var encoder = new Bm25SparseEncoder(PassthroughTermNormalizer.Instance);
 
         var ex = Assert.Throws<InvalidOperationException>(() => encoder.EncodeDocument("故障"));
         Assert.Contains("Fit", ex.Message, StringComparison.Ordinal);
@@ -44,7 +46,7 @@ public class Bm25SparseEncoderTests
     [Fact]
     public void EncodeQuery_未训练时抛异常()
     {
-        var encoder = new Bm25SparseEncoder();
+        var encoder = new Bm25SparseEncoder(PassthroughTermNormalizer.Instance);
 
         Assert.Throws<InvalidOperationException>(() => encoder.EncodeQuery("故障"));
     }
@@ -113,13 +115,14 @@ public class Bm25SparseEncoderTests
         try
         {
             var before = Fitted();
-            await SparseModelStore.SaveAsync(path, before, "test-embedder", 1024);
+            await SparseModelStore.SaveAsync(path, before, "test-embedder", 1024, before.NormalizerName);
 
             var loaded = await SparseModelStore.LoadAsync(path);
+            var reloaded = new Bm25SparseEncoder(PassthroughTermNormalizer.Instance, loaded.Model);
 
             Assert.Equal(
                 QueryWeight(before, "0x22010201"),
-                QueryWeight(loaded.Encoder, "0x22010201"));
+                QueryWeight(reloaded, "0x22010201"));
             Assert.Equal("test-embedder", loaded.EmbeddingServiceName);
         }
         finally
@@ -155,5 +158,35 @@ public class Bm25SparseEncoderTests
         }
 
         return sum;
+    }
+
+    /// <summary>
+    /// ★ 对称性由构造保证：normalizer 注入编码器之后，入库侧和查询侧走的是同一条路径，
+    /// 不可能出现「只做了一侧」的情况 —— 而只做一侧比两侧都不做更糟。
+    /// 这里验证：用 0x6041 训练、用 6041 查询，能对上。
+    /// </summary>
+    [Fact]
+    public void 规范化后入库侧与查询侧的词面能对上()
+    {
+        var encoder = new Bm25SparseEncoder(new HexTermNormalizer());
+        encoder.Fit(["对象字典 0x6041 状态字"]);
+
+        var query = encoder.EncodeQuery("6041 是什么");
+
+        Assert.NotEmpty(query.Indices);
+        Assert.Equal(encoder.TermId("6041"), query.Indices[0]);
+    }
+
+    /// <summary>
+    /// 反证：不带规范化时，0x6041 与 6041 是两个不同的词，查询打不中 ——
+    /// 这正是 README 里那个公开挂着的失败用例。
+    /// </summary>
+    [Fact]
+    public void 不规范化时0x6041与6041对不上()
+    {
+        var encoder = new Bm25SparseEncoder(PassthroughTermNormalizer.Instance);
+        encoder.Fit(["对象字典 0x6041 状态字"]);
+
+        Assert.Null(encoder.TermId("6041"));
     }
 }
