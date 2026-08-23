@@ -14,6 +14,11 @@
     <ProjectReference Include="..\IndustrialDocsRag.Retrieval\IndustrialDocsRag.Retrieval.csproj" />
   </ItemGroup>
 
+  <!-- RetrieveCommand 的 ExplainNotSupported / PoolLabel 是 internal，测试项目需要看得见它们 -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="IndustrialDocsRag.Tests" />
+  </ItemGroup>
+
   <ItemGroup>
     <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

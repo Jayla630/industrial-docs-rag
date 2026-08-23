@@ -110,7 +110,8 @@ internal static class Program
 
                 await using var services = CompositionRoot.Build(options, retriever, ShuffleSeed(flags));
                 return await RetrieveCommand.RunAsync(
-                    services, indexPath, SparseModelPath(flags, options), positional[0], topK, DumpPath(flags), ct);
+                    services, indexPath, SparseModelPath(flags, options), positional[0], topK,
+                    DumpPath(flags), flags.ContainsKey("explain"), ct);
             }
 
             case "ask":
@@ -226,7 +227,7 @@ internal static class Program
               --input 给 .md 走自动切分（表格行上下文化 + 页码锚点），给 .jsonl 读手工切好的块。
               --emit-chunks 把切分结果落成 jsonl 供人眼抽样审阅。
 
-          idr retrieve <查询串> [--topk N] [--retriever dense|sparse|hybrid|shuffle] [--seed N]
+          idr retrieve <查询串> [--topk N] [--retriever dense|sparse|hybrid|shuffle] [--seed N] [--explain]
               只跑检索、不接生成模型，直接打印召回结果与分数。
 
           idr ask      <问题> [--topk N] [--retriever dense|sparse|hybrid|shuffle] [--seed N]
@@ -244,6 +245,8 @@ internal static class Program
         --embedder remote  调用 BGE-M3 远程端点（默认，需要 API Key）
         --embedder fake    离线哈希词袋，不调外部服务；换了之后必须重新 ingest。
         --dump-topk <文件> 把本次召回追加写成 jsonl，供 Week3 的 pooling 标注。
+        --explain  打印稠密/稀疏两路的原始候选与融合结果，并报出降级判据
+                   （只支持 --retriever hybrid，单路检索器会直接报错退出）
 
         --answerer fixed|agent   fixed 是固定流水线（检索一次再作答）；
                                  agent 把检索包成 search_manual 交给 LLM 自主调用，

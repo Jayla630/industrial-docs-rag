@@ -20,5 +20,12 @@ public enum RetrievalSignalKind
     NoCandidateOverlap,
 }
 
-/// <summary>一条判据。成员全是 primitive，结构相等成立，测试可直接断言整个 record。</summary>
+/// <summary>
+/// 一条判据。成员全是 primitive，结构相等成立，测试可直接断言整个 record。
+/// <para>
+/// <see cref="Message"/> 不得包含换行：下游按行 <c>grep '^SIGNAL:'</c> 统计触发率，
+/// 多一个换行就会把一条判据算成两条。目前的实现只拼固定文案和计数，不含 chunk 文本，
+/// 天然满足；往判据里塞 chunk 摘要之类的自由文本时要留意这条约束。
+/// </para>
+/// </summary>
 public sealed record RetrievalSignal(RetrievalSignalKind Kind, string Message);
