@@ -18,11 +18,20 @@ public sealed class HybridRetriever(
     IRetriever dense,
     IRetriever sparse,
     IScoreFusion fusion,
-    int candidateMultiplier = 3) : IRetriever
+    int candidateMultiplier = 3) : IExplainableRetriever
 {
     public string Name => $"hybrid({dense.Name} + {sparse.Name}, {fusion.Name})";
 
+    /// <summary>
+    /// ★ 全类只有这一条召回路径。见 <see cref="IExplainableRetriever"/> 的注释：
+    /// 两个方法各写一份的话，轨迹会跟实际结果对不上，而且不报错。
+    /// </summary>
     public async Task<IReadOnlyList<RetrievedChunk>> RetrieveAsync(
+        RetrievalQuery query,
+        CancellationToken ct = default)
+        => (await RetrieveWithTraceAsync(query, ct)).Fused;
+
+    public async Task<RetrievalTrace> RetrieveWithTraceAsync(
         RetrievalQuery query,
         CancellationToken ct = default)
     {
@@ -32,6 +41,21 @@ public sealed class HybridRetriever(
         var sparseTask = sparse.RetrieveAsync(wide, ct);
         await Task.WhenAll(denseTask, sparseTask);
 
-        return fusion.Fuse(await denseTask, await sparseTask, query.TopK);
+        var denseHits = await denseTask;
+        var sparseHits = await sparseTask;
+
+        // 融合这一句没变：候选取法、融合器、排序截断都与 Week3 一致，
+        // 所以 eval 的数字逐位不变（判据推导是只读的，不参与 Fused）
+        var fused = fusion.Fuse(denseHits, sparseHits, query.TopK);
+
+        return new RetrievalTrace
+        {
+            Query = query.Text,
+            RetrieverName = Name,
+            Dense = denseHits,
+            Sparse = sparseHits,
+            Fused = fused,
+            Signals = RetrievalSignals.Detect(dense: denseHits, sparse: sparseHits, fused: fused),
+        };
     }
 }

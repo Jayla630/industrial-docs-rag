@@ -92,4 +92,81 @@ public class HybridRetrieverTests
 
         Assert.Equal(["a", "b"], hits.Select(h => h.Chunk.Id));
     }
+
+    /// <summary>
+    /// ★ 这个设计唯一的结构性风险：两个方法各走各的代码路径，
+    /// 轨迹显示的 Top-K 跟实际检索的对不上 —— 不抛异常，只是判错。
+    /// </summary>
+    [Fact]
+    public async Task RetrieveAsync_与轨迹的Fused逐条相同()
+    {
+        var hybrid = new HybridRetriever(
+            new SpyRetriever("dense", "dense", "a", "b", "c"),
+            new SpyRetriever("sparse", "sparse", "b", "c", "d"),
+            new RrfFusion());
+
+        var query = new RetrievalQuery { Text = "q", TopK = 3 };
+        var plain = await hybrid.RetrieveAsync(query);
+        var trace = await hybrid.RetrieveWithTraceAsync(query);
+
+        Assert.Equal(
+            plain.Select(h => (h.Chunk.Id, h.Score, h.RetrieverTag)),
+            trace.Fused.Select(h => (h.Chunk.Id, h.Score, h.RetrieverTag)));
+    }
+
+    [Fact]
+    public async Task RetrieveWithTraceAsync_两路候选是原始返回未被截断()
+    {
+        var hybrid = new HybridRetriever(
+            new SpyRetriever("dense", "dense", "a", "b", "c"),
+            new SpyRetriever("sparse", "sparse", "x", "y"),
+            new RrfFusion());
+
+        var trace = await hybrid.RetrieveWithTraceAsync(
+            new RetrievalQuery { Text = "q", TopK = 2 });
+
+        // 断言成员而不是整个 record：RetrievalTrace 带集合属性，
+        // 自动生成的 Equals 对 IReadOnlyList 走引用比较（见 CLAUDE.md 测试约定）
+        Assert.Equal(["a", "b", "c"], trace.Dense.Select(h => h.Chunk.Id));
+        Assert.Equal(["x", "y"], trace.Sparse.Select(h => h.Chunk.Id));
+        Assert.Equal(2, trace.Fused.Count);
+        Assert.Equal("q", trace.Query);
+        Assert.Equal(hybrid.Name, trace.RetrieverName);
+    }
+
+    [Fact]
+    public async Task RetrieveWithTraceAsync_两路收到扩大后的TopK()
+    {
+        var dense = new SpyRetriever("dense", "dense", "a");
+        var sparse = new SpyRetriever("sparse", "sparse", "b");
+        var hybrid = new HybridRetriever(dense, sparse, new RrfFusion());
+
+        await hybrid.RetrieveWithTraceAsync(new RetrievalQuery { Text = "q", TopK = 4 });
+
+        // 断言检索器收到的 TopK，不是返回条数 ——
+        // 索引块数不足时返回自然会少，拿返回条数断言会在小语料上假失败
+        Assert.Equal(12, dense.LastTopK);
+        Assert.Equal(12, sparse.LastTopK);
+    }
+
+    [Fact]
+    public async Task RetrieveWithTraceAsync_稀疏侧为空时带出SingleSideEmpty()
+    {
+        var hybrid = new HybridRetriever(
+            new SpyRetriever("dense", "dense", "a", "b"),
+            new SpyRetriever("sparse", "sparse"),
+            new RrfFusion());
+
+        var trace = await hybrid.RetrieveWithTraceAsync(
+            new RetrievalQuery { Text = "0x6041 是什么", TopK = 5 });
+
+        var signal = Assert.Single(trace.Signals);
+        Assert.Equal(RetrievalSignalKind.SingleSideEmpty, signal.Kind);
+
+        // Kind 恒为 SingleSideEmpty，不携带「哪一侧」的信息 —— 只断言 Kind 的话，
+        // 万一 HybridRetriever 里那句 Detect 调用被改成位置传参且顺序传反，
+        // dense/sparse 互换后 Kind 照样是 SingleSideEmpty，这条测试会假通过。
+        // 断言 Message 才能真正守住 Task 1 定的具名参数约定。
+        Assert.Contains("sparse", signal.Message);
+    }
 }
