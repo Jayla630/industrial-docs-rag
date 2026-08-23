@@ -266,6 +266,7 @@ $ dotnet run --project src/IndustrialDocsRag.App -- ask     "E201.2 是什么故
 | `--embedder remote \| fake` | `fake` 是离线哈希词袋，无需 API Key 即可跑通整条管道 |
 | `--emit-chunks <文件>` | 把切分结果落成 jsonl 供人眼抽样审阅 |
 | `--dump-topk <文件>` | 导出召回结果，供 Week3 的 pooling 标注 |
+| `--explain` | 打印两路原始候选与融合结果，并报出降级判据。只支持 `hybrid`，单路检索器直接报错退出（静默打一张空表又是一个「看起来正常」） |
 
 `retrieve` 单独存在是刻意的：检索和生成同时接通再调试，出问题时分不清是召回差还是 prompt 差，那是最烧时间的一类排查。
 
@@ -332,6 +333,12 @@ dotnet user-secrets set "Rag:Chat:ApiKey"      "<DeepSeek key>"    --project src
 
 **不装 Docker**（内存索引 + 仓库自带的 15 块 fixture）：
 
+> ⚠ **无参数的 `ingest` 会覆盖 `data/index.week3.json` 与 `data/bm25.week3.json`。**
+> 默认 `IndexPath` 指着它们，而默认输入是 15 块 fixture —— 如果你已经按上面「怎么复现」
+> 建好了 1667 块的完整索引，这条命令会把它悄悄换成 15 块，`ingest` 照样打印成功、
+> 后续 `retrieve` 照样有结果，只是评测全废。这些文件不入 git，没有版本备份。
+> 要保留完整索引就显式指定 `--index` / `--sparse-model` 到别的路径。
+
 ```bash
 dotnet run --project src/IndustrialDocsRag.App -- ingest
 dotnet run --project src/IndustrialDocsRag.App -- retrieve "0x6041 状态字" --retriever hybrid
@@ -365,6 +372,8 @@ dotnet run --project src/IndustrialDocsRag.App -- ask "E201.2 是什么故障？
 
 **上下文化表格行是一个权衡，不是纯收益。** 把表格行拼成"表标题 + 章节 + 字段 + 值"能让每行脱离原表也被读懂（生成侧受益），但同表各行因此有 90% 文本完全相同，在向量空间里挤成一团（检索侧受损）。上面那张对比表的第一行就是这个代价的实测：`E201.2` 在 1667 块规模下让稠密侧跌出 Top-10。**这个权衡目前只有定性描述，没有量化** —— 把它做成实验维度需要改切分器并重新嵌入全量语料，Week3 的预算给了融合方式与术语规范化两条实验线，这一条留在「已知局限」里。
 
+顺带排除掉一条看着很对症的解法：**层级检索**——上下文只放进父节点的摘要，表格行本身保持稀疏，两头的好处理论上都能拿到。查了火山引擎的 OpenViking（面向智能体的上下文数据库，commit `6e944cc3`）：它把层级检索当核心卖点，文档里整节推导分数传播公式，而 `openviking_cli/utils/config/retrieval_config.py` 的默认值是 `score_propagation_alpha = 1.0`（按其文档原话，"1 表示只用子节点自身分数"，即父分数**完全不进**最终排序）、`hotness_alpha = 0.0`（热度加权整个关闭）。递归照跑，但只用来决定探索哪些目录。**这是旁证不是定论**（默认值保守可能另有原因），可一个拿它当卖点的系统都没让它默认生效，就不值得赌上一个周末的预算。判据仍是本项目一贯那条：**看默认参数，不看文档宣传**。
+
 **复合表头会静默毁掉 39% 的块。** 参数一览表是三行表头，PDF 转换只认了第一行，真正的列名（`组别` / `索引码` / `参数`）落进了前两个"数据行"，未命名的列被填成 `列2` `列3` 占位符。后果不只是多两条无意义的块——列名丢成 `列3: H06-08` 之后，检索侧就匹配不到"索引码""参数"这些用户真会打的词。实测 678/1737 块受影响。切分器加了三重判据识别表头续行（表头本来就有未命名列、续行末列为空、该行确实提供了列名），并配一条反向守卫测试确保表头完整时不会吞掉数据行。修完 39% → 17%，残留的都是跨列合并表头，内容完整只是列名缺失。
 
 **覆盖区间不能用 `Text.Length` 算。** `TableRow` 的文本是拼装出来的，比源行长得多，用它算 `[CharOffset, CharOffset+Len)` 会一路盖到后面几行——而表格行占语料的 94%，Week3 判命中会系统性误判。为此给 `DocumentChunk` 加了 `SourceLength`，全量 1667 块的偏移都做过复核。
@@ -373,7 +382,38 @@ dotnet run --project src/IndustrialDocsRag.App -- ask "E201.2 是什么故障？
 ` 之前、`
 ` 还留在行尾，匹配直接失败，引用于是指向了中间产物 `.md` 而不是手册 PDF（Week4 的跳页要认 PDF）。补了一条显式构造 CRLF 的回归测试。
 
-**`record` 的结构相等会被集合属性静默废掉。** C# 自动生成的 `Equals` 对 `IReadOnlyList<T>` 属性走 `EqualityComparer<T>.Default`，而反序列化出来的 `List<T>` 没重写 `Equals`，落到的是引用比较——评测集存盘再读回来，内容一模一样却判不相等。诱人的修法是给模型手写 `Equals`/`GetHashCode`，但生产侧没有任何地方比较这些 record，为一句测试断言扩大生产接口不划算；更要命的是以后加字段忘了同步 `Equals`，会得到**静默错误的相等判定**——又一个「不报错、只是判错」的失效。约定改成：**带集合属性的 record，测试一律断言成员，不断言整个 record。**受影响的是 `EvalQuestion`、`ConfigSummary`、`PairwiseDiff`；成员全是 primitive 的（`Anchor` / `ResolvedAnchor` / `QuestionOutcome`）结构相等成立，不受影响。
+**`record` 的结构相等会被集合属性静默废掉。** C# 自动生成的 `Equals` 对 `IReadOnlyList<T>` 属性走 `EqualityComparer<T>.Default`，而反序列化出来的 `List<T>` 没重写 `Equals`，落到的是引用比较——评测集存盘再读回来，内容一模一样却判不相等。诱人的修法是给模型手写 `Equals`/`GetHashCode`，但生产侧没有任何地方比较这些 record，为一句测试断言扩大生产接口不划算；更要命的是以后加字段忘了同步 `Equals`，会得到**静默错误的相等判定**——又一个「不报错、只是判错」的失效。约定改成：**带集合属性的 record，测试一律断言成员，不断言整个 record。**受影响的是 `EvalQuestion`、`ConfigSummary`、`PairwiseDiff`、`RetrievalTrace`；成员全是 primitive 的（`Anchor` / `ResolvedAnchor` / `QuestionOutcome` / `RetrievalSignal`）结构相等成立，不受影响。
+
+**混合检索会静默退化成单路。** `0x603F 是什么` 这题 BM25 是 **0 结果**（上文那张表里就写着），
+于是融合退化成纯稠密 —— 但融合照做、分数照出、Top-5 照给，**没有任何一处说过有一路全军覆没**。
+控制台上它跟一次正常检索长得一模一样，只有把召回列表逐条读完才会发现 5 条全是 `tag=dense`。
+又一个「不报错、只是判错」。
+
+现在 `HybridRetriever` 把两路原始候选与融合结果一起吐出来（`retrieve --explain`），
+并在结构性退化时打出判据行。25 题上的实测触发率：
+
+| 判据 | 触发 | 命中题 |
+|---|---|---|
+| `SingleSideEmpty`（某一路 0 结果） | 1 / 25 | q16 |
+| `NoCandidateOverlap`（两路候选零交集） | 3 / 25 | q12 / q17 / q19 |
+| `FusedFromOneSideOnly`（一路有候选却无一进 Top-K） | 0 / 25 | — |
+
+**定级规则在跑数据之前就写死了**（≤5 保留为警告 / 6–15 降为提示 / >15 删掉这条判据），
+因为「一个天天喊狼来了的警告等于没有警告」本身就是一种失效，事后看着数字找理由等于没有判据。
+结果是三条全部保留 —— **而这推翻了我自己的预判**：设计时我判断后两条「很可能是常态、会高频触发被删掉」，
+实测 `NoCandidateOverlap` 只有 12%，`FusedFromOneSideOnly` 一次没触发。凭感觉的话这两条早被砍了。
+
+**判据的边界要说清楚：它只抓结构性退化，不抓召回质量。** 记法差异层是 q16–q20 五题，
+判据只在 3 题上给了信号（q16 稀疏侧全空，q17/q19 两路零交集）；q18 `606Dh 的单位是什么`、
+q20 `6061h 是只读还是可读写` 的 BM25 **有结果、与稠密侧也有交集，只是答案不对** —— 判据一声不吭。
+所以它是评测的补充、不是替代：**能告诉你「这次检索的结构坏了」，不能告诉你「这次检索答错了」。**
+
+轨迹本身还带一个同类的坑：`RetrieveAsync` 与 `RetrieveWithTraceAsync` 一旦各写一份实现，
+就会出现「轨迹显示的 Top-K 跟实际检索的对不上」，同样不抛异常。现在前者是
+`(await RetrieveWithTraceAsync(q, ct)).Fused` 一行，并有单测逐条比对两者的 id、分数与 tag。
+配套的一条教训：那条单测最初只断言了判据的 `Kind`，而 `Kind` 不携带「哪一侧空了」的信息 ——
+`Detect` 的三个参数类型全是 `IReadOnlyList<RetrievedChunk>`，真把 dense/sparse 传反了，
+`Kind` 照样是 `SingleSideEmpty`，测试照样绿。补了对 `Message` 的断言才真正钉住。
 
 ---
 
@@ -395,7 +435,12 @@ dotnet run --project src/IndustrialDocsRag.App -- ask "E201.2 是什么故障？
 - **只做了最小退避重试**（429/5xx 指数退避三次），没有限流、熔断、超时。
 - **`MinScore` 阈值确认不可用，永久不开**。Week3 在 1667 块上实测了完整分数分布：稠密侧相关块最低 0.5215、
   无关块最高 0.7289，**87% 的无关块分数高于最难的那个相关块**；稀疏侧同样重叠（相关最低 7.78 vs 无关最高 26.61）。
-  不存在任何可用的阈值区间。
+  不存在任何可用的阈值区间。**这条有一份独立旁证**：火山引擎的 OpenViking（commit `6e944cc3`）在
+  `openviking/retrieve/context_assembler/budget.py` 的模块注释里写着同一个判断 —— "Scores cluster in a
+  narrow band, so spending the whole budget on the top hit is a bad bet"，其上下文预算因此采用
+  「先按默认层级把候选全铺开、有余量再逐个加深」，而不是把预算压给头名。两边语料毫无关系（它是智能体上下文，
+  我们是工业手册），它是写在设计理由里的定性判断、我们是分数分布的定量实测 —— **算独立收敛，不算互相证明**。
+  记一笔是因为「分数高就是更相关、可以拿来当阈值」是 RAG 教程里的默认假设，而两处证据都指向它不成立。
 
 ---
 
@@ -419,4 +464,5 @@ dotnet run --project src/IndustrialDocsRag.App -- ask "E201.2 是什么故障？
 - [x] **Week 2** — Qdrant + BM25 混合检索、Markdown 自动切分、表格行上下文化、SK function calling
 - [x] **Week 3** — 25 题分层评测集、Recall@5 与 MRR、参数对比实验（融合方式 / 术语规范化）
       + 防自欺自检行（随机对照、规范化不泄漏）。**上下文化开/关未做**，见「已知局限」
-- [ ] **Week 4** — WPF 界面、点击引用跳转原文页码
+- [ ] **Week 4** — 检索轨迹与单路失效判据（`retrieve --explain`，已完成）
+      + WPF 界面、点击引用跳转原文页码（未开始）
